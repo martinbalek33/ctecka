@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Čtečka (Azure hlasy)</title>
+<style>
+:root{--bg:#f3efe6;--ink:#1d2a2a;--muted:#5d6b69;--card:#fbf9f3;--line:#d9d3c3;--accent:#0f6b63;--onaccent:#fff;--hl:#f4dc8a;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121a1a;--ink:#e8e4d8;--muted:#9aa8a5;--card:#1a2525;--line:#2d3b3a;--accent:#5cc4b8;--onaccent:#0b1514;--hl:#5a4d1c}}
+:root[data-theme="dark"]{--bg:#121a1a;--ink:#e8e4d8;--muted:#9aa8a5;--card:#1a2525;--line:#2d3b3a;--accent:#5cc4b8;--onaccent:#0b1514;--hl:#5a4d1c}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:Georgia,"Times New Roman",serif}
+main{max-width:640px;margin:0 auto;padding:20px 18px 40px}
+h1{font-size:1.5rem;margin:0 0 4px;font-weight:700}
+.sub{color:var(--muted);margin:0 0 18px;font-size:.95rem;font-family:system-ui,sans-serif}
+.drop{display:block;border:2px dashed var(--line);border-radius:14px;padding:22px 16px;text-align:center;background:var(--card);cursor:pointer;font-family:system-ui,sans-serif}
+.drop strong{display:block;font-size:1.05rem;margin-bottom:4px}
+.drop span{color:var(--muted);font-size:.9rem}
+input[type=file]{display:none}
+textarea{width:100%;min-height:70px;margin-top:10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);padding:10px;font:inherit;font-size:.95rem}
+button,select{font-family:system-ui,sans-serif;font-size:1rem;color:var(--ink)}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:10px 14px;cursor:pointer}
+.btn:focus-visible,select:focus-visible,input:focus-visible,.drop:focus-within{outline:3px solid var(--accent);outline-offset:2px}
+#player{display:none;margin-top:18px}
+.title{font-weight:700;font-size:1.1rem;margin:0}
+.chap{color:var(--muted);font-family:system-ui,sans-serif;font-size:.9rem;margin:2px 0 12px}
+.page{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;line-height:1.65;font-size:1.12rem;max-height:42vh;overflow:auto}
+.page mark{background:var(--hl);color:inherit;border-radius:3px;padding:0 1px}
+.ctl{display:flex;gap:10px;align-items:center;justify-content:center;margin:16px 0}
+.play{background:var(--accent);color:var(--onaccent);border:0;border-radius:50%;width:68px;height:68px;font-size:1.6rem;cursor:pointer}
+.ctl .btn{min-width:56px}
+.row{display:flex;flex-direction:column;gap:6px;margin:12px 0;font-family:system-ui,sans-serif;font-size:.92rem;color:var(--muted)}
+.row select,.row input[type=range]{width:100%}
+select{padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--card)}
+input[type=range]{accent-color:var(--accent)}
+.note{font-family:system-ui,sans-serif;font-size:.85rem;color:var(--muted);margin-top:14px;line-height:1.5}
+.row input[type=text],.row input[type=password]{padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:1rem;width:100%}
+.err{color:#b3261e;font-family:system-ui,sans-serif;margin-top:10px}
+#lib{display:none;margin-top:22px;font-family:system-ui,sans-serif}
+#lib h2{font-size:1.05rem;margin:0 0 8px}
+.bk{display:flex;gap:8px;margin-bottom:8px}
+.bk .open{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bk .del{min-width:48px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Čtečka</h1>
+  <p class="sub">Vlož knihu a nech si ji přečíst nahlas.</p>
+
+  <label class="drop" id="drop">
+    <strong>Vybrat knihu</strong>
+    <span>EPUB nebo TXT</span>
+    <input type="file" id="file" accept=".epub,.txt,text/plain,application/epub+zip">
+  </label>
+  <textarea id="paste" placeholder="Nebo sem vlož text a stiskni „Číst vložený text“"></textarea>
+  <button class="btn" id="pasteBtn" style="margin-top:8px">Číst vložený text</button>
+  <div class="err" id="err" role="alert"></div>
+  <section id="lib"><h2>Uložené knihy</h2><div id="libList"></div></section>
+
+  <section id="player">
+    <p class="title" id="bookTitle"></p>
+    <p class="chap" id="chapInfo"></p>
+    <div class="page" id="page" aria-live="off"></div>
+
+    <div class="ctl">
+      <button class="btn" id="prevCh" aria-label="Předchozí kapitola">⏮</button>
+      <button class="btn" id="back" aria-label="Zpět o větu">−</button>
+      <button class="play" id="play" aria-label="Přehrát">▶</button>
+      <button class="btn" id="fwd" aria-label="Vpřed o větu">+</button>
+      <button class="btn" id="nextCh" aria-label="Další kapitola">⏭</button>
+    </div>
+
+    <div class="row"><label for="chSel">Kapitola</label><select id="chSel"></select></div>
+    <div class="row"><label for="akey">Azure klíč (uložen jen v tomto telefonu)</label><input type="password" id="akey" autocomplete="off"></div>
+    <div class="row"><label for="areg">Azure oblast (region), např. westeurope</label><input type="text" id="areg" value="westeurope" autocapitalize="off" autocomplete="off"></div>
+    <div class="row"><label for="voice">Hlas vypravěče</label><select id="voice"><option value="cs-CZ-AntoninNeural">Antonín (muž)</option><option value="cs-CZ-VlastaNeural">Vlasta (žena)</option></select></div>
+    <div class="row"><label for="rate" id="rateLbl">Rychlost: 1,0×</label><input type="range" id="rate" min="0.6" max="2" step="0.1" value="1"></div>
+    <div class="row"><label for="pitch" id="pitchLbl">Výška hlasu: 1,00</label><input type="range" id="pitch" min="0.5" max="1.5" step="0.05" value="1"></div>
+    <div class="row"><label for="vol" id="volLbl">Hlasitost: 100 %</label><input type="range" id="vol" min="0.2" max="1" step="0.05" value="1"></div>
+    <div class="row"><label for="pause" id="pauseLbl">Pauza mezi větami: 0,30 s</label><input type="range" id="pause" min="0" max="1.5" step="0.05" value="0.3"></div>
+    <div class="row"><label for="diff" id="diffLbl">Rozdíl hlasů v přímé řeči: 100 %</label><input type="range" id="diff" min="0" max="1.6" step="0.1" value="1"></div>
+    <div class="row"><label><input type="checkbox" id="expr" checked> Výrazné čtení (otázky, zvolání, citoslovce)</label></div>
+    <div class="row"><label><input type="checkbox" id="gender" checked> Rozlišovat ženské a mužské postavy v přímé řeči</label></div>
+    <div class="row"><label><input type="checkbox" id="keep"> Nechat displej svítit, dokud se čte</label></div>
+    <div class="row"><label for="dict">Výslovnost jmen a slov (jedno na řádek: slovo = jak číst)</label><textarea id="dict" placeholder="Bradshaw = bredšó"></textarea></div>
+    <p class="note">Hlasy: Microsoft Azure (Antonín pro muže, Vlasta pro ženy). Čtení potřebuje internet. Pozice se pamatuje pro každou knihu.</p>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+(function(){
+  var $ = function(id){return document.getElementById(id)};
+  var synth = null;
+  var book = null;          // {name, chapters:[{title,text}]}
+  var ci = 0, chunks = [], idx = 0, playing = false, voices = [];
+  var rate = 1, voiceURI = '';
+  var speakToken = 0, curU = null, errCount = 0, db = null;
+  var FEM = /\bzuzana\b|\bjana\b|eli[sš]ka|lucie|kate[rř]ina|petra|tereza|\banna\b|female|[žz]ena|iveta|marie/i;
+  var MAS = /\bjan\b|radek|mat[eě]j|honza|tom[aá][sš]|vojt[eě]ch|pavel|\bmale\b|mu[zž]|jakub|\bpetr\b|\bvit\b/i;
+  var gv = {f:'', m:''}, opt = {expr:true, gender:true}, pitchBase = 1, volBase = 1, pauseMs = 300, dedicated = false, diffAmt = 1;
+
+  function err(m){ $('err').textContent = m || ''; }
+  function store(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+  function load(k){ try{ var v = localStorage.getItem(k); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
+
+  var azVoice = 'cs-CZ-AntoninNeural';
+  var sv = load('ctecka:voice'); if(typeof sv === 'string' && /^cs-CZ-/.test(sv)) $('voice').value = sv;
+  azVoice = $('voice').value;
+  $('voice').onchange = function(){ azVoice = this.value; store('ctecka:voice', azVoice); restartIfPlaying(); };
+  var akey = load('ctecka:akey') || '', areg = load('ctecka:areg') || 'westeurope';
+  $('akey').value = akey; $('areg').value = areg;
+  $('akey').oninput = function(){ akey = this.value.trim(); store('ctecka:akey', akey); };
+  $('areg').oninput = function(){ areg = this.value.trim() || 'westeurope'; store('ctecka:areg', areg); };
+  $('rate').oninput = function(){
+    rate = parseFloat(this.value);
+    $('rateLbl').textContent = 'Rychlost: ' + rate.toFixed(1).replace('.',',') + '×';
+    store('ctecka:rate', rate);
+  };
+  $('rate').onchange = restartIfPlaying;
+  var sr = load('ctecka:rate'); if(sr){ rate = sr; $('rate').value = sr; $('rate').oninput(); }
+
+  /* udržení čtení při zamknutí: tichý zvuk + ovládání na zámku + displej */
+  var wl = null, keepAudio = null;
+  function silenceURI(){
+    var sr = 8000, n = sr, b = new Uint8Array(44 + n * 2), v = new DataView(b.buffer);
+    function s(o, t){ for(var i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); }
+    s(0,'RIFF'); v.setUint32(4, 36 + n * 2, true); s(8,'WAVE'); s(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true); v.setUint32(24,sr,true); v.setUint32(28,sr*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true); s(36,'data'); v.setUint32(40, n * 2, true);
+    var bin = ''; for(var i = 0; i < b.length; i++) bin += String.fromCharCode(b[i]);
+    return 'data:audio/wav;base64,' + btoa(bin);
+  }
+  function startKeep(){
+    try{
+      if('mediaSession' in navigator){
+        navigator.mediaSession.metadata = new MediaMetadata({title: book ? book.name : 'Čtečka', artist: 'Čtečka'});
+        navigator.mediaSession.playbackState = 'playing';
+        navigator.mediaSession.setActionHandler('play', function(){ play(); });
+        navigator.mediaSession.setActionHandler('pause', function(){ stop(); });
+        navigator.mediaSession.setActionHandler('nexttrack', function(){ nextChapter(false); });
+        navigator.mediaSession.setActionHandler('previoustrack', function(){ prevChapter(); });
+      }
+    }catch(e){}
+    getLock();
+  }
+  function getLock(){
+    try{
+      if($('keep').checked && navigator.wakeLock && !wl){
+        navigator.wakeLock.request('screen').then(function(l){ wl = l; l.addEventListener('release', function(){ wl = null; }); }).catch(function(){});
+      }
+    }catch(e){}
+  }
+  function stopKeep(){
+    try{ if('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused'; }catch(e){}
+    try{ if(wl){ wl.release(); wl = null; } }catch(e){}
+  }
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden && playing) getLock(); });
+  var kc = load('ctecka:okeep'); if(typeof kc === 'boolean') $('keep').checked = kc;
+  $('keep').onchange = function(){ store('ctecka:okeep', this.checked); if(playing){ if(this.checked) getLock(); else { try{ if(wl){ wl.release(); wl = null; } }catch(e){} } } };
+
+  /* ---------- uložené knihy (IndexedDB) ---------- */
+  function idb(cb){
+    try{
+      var rq = indexedDB.open('ctecka', 1);
+      rq.onupgradeneeded = function(){ rq.result.createObjectStore('books', {keyPath:'name'}); };
+      rq.onsuccess = function(){ db = rq.result; cb(); };
+      rq.onerror = function(){ cb(); };
+    }catch(e){ cb(); }
+  }
+  function saveBook(b){
+    if(!db) return;
+    try{ db.transaction('books','readwrite').objectStore('books').put({name:b.name, chapters:b.chapters}); }catch(e){}
+    setTimeout(refreshLib, 400);
+  }
+  function openSaved(name){
+    if(!db) return;
+    try{
+      var rq = db.transaction('books','readonly').objectStore('books').get(name);
+      rq.onsuccess = function(){ if(rq.result) openBook(rq.result.name, rq.result.chapters, null, true); };
+    }catch(e){}
+  }
+  function delBook(name){
+    if(!db) return;
+    try{ db.transaction('books','readwrite').objectStore('books').delete(name); }catch(e){}
+    try{ localStorage.removeItem('ctecka:pos:' + name); }catch(e){}
+    setTimeout(refreshLib, 300);
+  }
+  function refreshLib(){
+    if(!db) return;
+    try{
+      var rq = db.transaction('books','readonly').objectStore('books').getAll();
+      rq.onsuccess = function(){
+        var list = rq.result || [];
+        var box = $('libList'); box.innerHTML = '';
+        $('lib').style.display = list.length ? 'block' : 'none';
+        list.forEach(function(b){
+          var row = document.createElement('div'); row.className = 'bk';
+          var o = document.createElement('button'); o.className = 'btn open'; o.textContent = b.name;
+          o.onclick = function(){ openSaved(b.name); };
+          var d = document.createElement('button'); d.className = 'btn del'; d.textContent = '✕';
+          d.setAttribute('aria-label', 'Smazat knihu ' + b.name);
+          d.onclick = function(){ delBook(b.name); };
+          row.appendChild(o); row.appendChild(d); box.appendChild(row);
+        });
+      };
+    }catch(e){}
+  }
+
+  /* ---------- načtení knihy ---------- */
+  var SPEECH = ['řek','zept','odpově','zvola','zašept','křik','vykřik','pronesl','dod','povzdech','zamumla','namít','opáčil','odvět','zamruč','vyhrk','připomně','ptal','vol','šept','mluv','odsek','vloži','zaklel','hlesl','štěk','utrh','souhlas','poznamen','konstat','prohlásil','sdělil','pokrač','zasmá','usmá','vzdych','vzdech'];
+  var INTERJ = /^(ach|ách|áh|ó|ou|jé|jéje|fuj|hm+|ha(?:ha)*|hurá|au|uf|pst|brr|ejhle|fíha|sakra|ježíši|ehm|no)([,!.?…]+)\s*/i;
+  var QRE = /„[^“”]*[“”]|"[^"]*"|“[^”]*”|»[^«]*«|«[^»]*»|‚[^‘’]*[‘’]/g;
+
+  function wordGender(str){
+    var ws = str.toLowerCase().match(/[\p{L}]+/gu) || [];
+    for(var i = 0; i < ws.length; i++){
+      var w = ws[i];
+      if(!SPEECH.some(function(s){ return w.indexOf(s) === 0; })) continue;
+      if(/(la|ly)$/.test(w)) return 'f';
+      if(/l$/.test(w) && w.length > 3) return 'm';
+    }
+    return '';
+  }
+  function segmentsOf(par){
+    var segs = [], last = 0, m;
+    QRE.lastIndex = 0;
+    while((m = QRE.exec(par))){
+      if(m.index > last) segs.push({t:par.slice(last, m.index), d:false});
+      segs.push({t:m[0], d:true});
+      last = m.index + m[0].length;
+    }
+    if(last < par.length) segs.push({t:par.slice(last), d:false});
+    return segs;
+  }
+  function pushSentences(out, text, who){
+    var ss = text.match(/[^.!?…]+[.!?…]+["“”»«)]*\s*|[^.!?…]+$/g) || [];
+    ss.forEach(function(s){
+      s = s.trim(); if(!s) return;
+      var core = s.replace(/^[„“"»«\s]+/, '');
+      var m = INTERJ.exec(core);
+      if(m && core.length > m[0].length){ out.push({t:m[0].trim(), k:'i', w:who, p:0.6}); s = core.slice(m[0].length); }
+      var pieces = [];
+      if(s.length > 160){
+        var cur = '';
+        (s.match(/[^,;:]+[,;:]?\s*/g) || [s]).forEach(function(p){
+          if((cur + p).length > 130 && cur){ pieces.push(cur.trim()); cur = p; } else cur += p;
+        });
+        if(cur.trim()) pieces.push(cur.trim());
+      } else pieces = [s];
+      pieces.forEach(function(p, i){
+        var last = i === pieces.length - 1, tail = p.replace(/["“”»«)\s]+$/, ''), k = 'n';
+        if(last){ if(/\?$/.test(tail)) k = 'q'; else if(/!$/.test(tail)) k = 'e'; else if(/(…|\.\.\.)$/.test(tail)) k = 'z'; }
+        out.push({t:p, k:k, w:who, p: last ? 1 : 0.3});
+      });
+    });
+  }
+  function splitChunks(text){
+    var out = [], lastG = '', prevDia = false;
+    text.split(/\n+/).forEach(function(par){
+      par = par.replace(/\s+/g, ' ').trim();
+      if(!par) return;
+      var dash = /^[–—-]\s/.test(par);
+      var segs = dash ? [{t:par.replace(/^[–—-]\s*/, ''), d:true, dash:true}] : segmentsOf(par);
+      if(!segs.some(function(s){ return s.d; })){ prevDia = false; lastG = ''; }
+      var start = out.length;
+      segs.forEach(function(sg, i){
+        var who = 'n';
+        if(sg.d){
+          var g = '';
+          if(sg.dash) g = wordGender(sg.t);
+          else {
+            var nx = segs[i+1], pv = segs[i-1];
+            if(nx && !nx.d) g = wordGender(nx.t.slice(0, 80));
+            if(!g && pv && !pv.d) g = wordGender(pv.t.slice(-80));
+          }
+          if(!g && prevDia && lastG) g = lastG === 'f' ? 'm' : 'f';
+          if(g){ who = g; lastG = g; } else who = 'd';
+          prevDia = true;
+        }
+        pushSentences(out, sg.t.trim(), who);
+      });
+      if(out.length > start) out[out.length-1].p = 2;
+    });
+    return out;
+  }
+
+  /* hlasy pro postavy, výška, hlasitost, pauzy */
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+  function fmt(n, d){ return n.toFixed(d).replace('.', ','); }
+  function pickVoice(ck){
+    if(opt.gender){
+      if(ck.w === 'f') return 'cs-CZ-VlastaNeural';
+      if(ck.w === 'm') return 'cs-CZ-AntoninNeural';
+    }
+    return azVoice;
+  }
+  function bindSlider(id, key, lblId, label, apply){
+    var el = $(id), s = load('ctecka:' + key);
+    if(typeof s === 'number') el.value = s;
+    function upd(){ var v = parseFloat(el.value); apply(v); $(lblId).textContent = label(v); }
+    el.oninput = function(){ upd(); store('ctecka:' + key, parseFloat(el.value)); };
+    el.onchange = restartIfPlaying;
+    upd();
+  }
+  bindSlider('pitch', 'pitch', 'pitchLbl', function(v){ return 'Výška hlasu: ' + fmt(v, 2); }, function(v){ pitchBase = v; });
+  bindSlider('vol', 'vol', 'volLbl', function(v){ return 'Hlasitost: ' + Math.round(v * 100) + ' %'; }, function(v){ volBase = v; });
+  bindSlider('pause', 'pause', 'pauseLbl', function(v){ return 'Pauza mezi větami: ' + fmt(v, 2) + ' s'; }, function(v){ pauseMs = v * 1000; });
+  bindSlider('diff', 'diff', 'diffLbl', function(v){ return 'Rozdíl hlasů v přímé řeči: ' + Math.round(v * 100) + ' %'; }, function(v){ diffAmt = v; });
+  var dictRules = [];
+  function esc(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  function parseDict(){
+    dictRules = [];
+    $('dict').value.split('\n').forEach(function(line){
+      var i = line.indexOf('=');
+      if(i < 1) return;
+      var from = line.slice(0, i).trim(), to = line.slice(i + 1).trim();
+      if(!from || !to) return;
+      try{
+        dictRules.push({re: new RegExp('(^|[^\\p{L}])' + esc(from) + '(\\p{L}{0,4})(?!\\p{L})', 'giu'), fn: function(m, pre, suf){ return pre + to + suf; }});
+      }catch(e){}
+    });
+  }
+  function applyDict(t){
+    dictRules.forEach(function(r){ t = t.replace(r.re, r.fn); });
+    return t;
+  }
+  var ds = load('ctecka:dict');
+  if(typeof ds === 'string') $('dict').value = ds;
+  parseDict();
+  $('dict').oninput = function(){ store('ctecka:dict', this.value); parseDict(); };
+  $('dict').onchange = restartIfPlaying;
+  ['expr', 'gender'].forEach(function(k){
+    var el = $(k), s = load('ctecka:o' + k);
+    if(typeof s === 'boolean') el.checked = s;
+    opt[k] = el.checked;
+    el.onchange = function(){ opt[k] = el.checked; store('ctecka:o' + k, el.checked); restartIfPlaying(); };
+  });
+
+  function splitChunksOld(text){
+    var sentences = (text.replace(/\s+/g,' ').match(/[^.!?…]+[.!?…]+["“”»)]*\s*|[^.!?…]+$/g) || []).reduce(function(a,s){
+      if(s.length <= 180){ a.push(s); return a; }
+      (s.match(/[^,;:]+[,;:]?\s*/g) || [s]).forEach(function(p){ a.push(p); });
+      return a;
+    }, []);
+    var out = [], cur = '';
+    sentences.forEach(function(s){
+      if((cur + s).length > 130 && cur){ out.push(cur.trim()); cur = s; }
+      else cur += s;
+    });
+    if(cur.trim()) out.push(cur.trim());
+    return out;
+  }
+
+  function openBook(name, chapters, startPos, skipSave){
+    chapters = chapters.filter(function(c){ return c.text && c.text.trim().length > 0; });
+    if(!chapters.length){ err('V knize jsem nenašel žádný text.'); return; }
+    err(''); stop();
+    book = {name:name, chapters:chapters};
+    if(!skipSave && name !== 'Vložený text') saveBook(book);
+    $('bookTitle').textContent = name;
+    var sel = $('chSel'); sel.innerHTML = '';
+    chapters.forEach(function(c,i){
+      var o = document.createElement('option'); o.value = i;
+      o.textContent = (i+1) + '. ' + (c.title || 'Kapitola');
+      sel.appendChild(o);
+    });
+    var pos = startPos || load('ctecka:pos:' + name) || {c:0,i:0};
+    gotoChapter(Math.min(pos.c, chapters.length-1), pos.i || 0);
+    $('player').style.display = 'block';
+    $('player').scrollIntoView({behavior:'smooth'});
+  }
+
+  function gotoChapter(c, i){
+    ci = c;
+    chunks = splitChunks(book.chapters[ci].text);
+    idx = Math.min(i || 0, Math.max(chunks.length-1, 0));
+    $('chSel').value = ci;
+    render();
+  }
+
+  function render(){
+    var box = $('page'); box.innerHTML = '';
+    var from = Math.max(0, idx-1), to = Math.min(chunks.length, idx+4);
+    for(var k = from; k < to; k++){
+      var el = document.createElement(k===idx ? 'mark' : 'span');
+      el.textContent = chunks[k].t + ' ';
+      box.appendChild(el);
+    }
+    $('chapInfo').textContent = 'Kapitola ' + (ci+1) + ' z ' + book.chapters.length + ' · úsek ' + (idx+1) + ' z ' + chunks.length;
+    store('ctecka:pos:' + book.name, {c:ci, i:idx});
+  }
+
+  function readTxt(file){
+    var r = new FileReader();
+    r.onload = function(){
+      var t = String(r.result);
+      var parts = t.split(/\n\s*(?=(?:kapitola|chapter|část)\s+\S+)/i);
+      var chapters = parts.length > 1
+        ? parts.map(function(p,i){ return {title:(p.split('\n')[0]||'').slice(0,50), text:p}; })
+        : [{title:'Text', text:t}];
+      openBook(file.name.replace(/\.[^.]+$/,''), chapters);
+    };
+    r.onerror = function(){ err('Soubor se nepodařilo přečíst.'); };
+    r.readAsText(file);
+  }
+
+  function readEpub(file){
+    if(!window.JSZip){ err('Nepodařilo se načíst knihovnu pro EPUB. Zkus TXT.'); return; }
+    var zip;
+    JSZip.loadAsync(file).then(function(z){
+      zip = z;
+      return zip.file('META-INF/container.xml').async('string');
+    }).then(function(xml){
+      var doc = new DOMParser().parseFromString(xml, 'application/xml');
+      var opfPath = doc.querySelector('rootfile').getAttribute('full-path');
+      var base = opfPath.indexOf('/') > -1 ? opfPath.slice(0, opfPath.lastIndexOf('/')+1) : '';
+      return zip.file(opfPath).async('string').then(function(opf){
+        var d = new DOMParser().parseFromString(opf, 'application/xml');
+        var manifest = {};
+        d.querySelectorAll('manifest > item').forEach(function(it){ manifest[it.getAttribute('id')] = it.getAttribute('href'); });
+        var meta = d.getElementsByTagName('dc:title')[0];
+        var title = meta ? meta.textContent.trim() : file.name.replace(/\.[^.]+$/,'');
+        var hrefs = [];
+        d.querySelectorAll('spine > itemref').forEach(function(r){
+          var h = manifest[r.getAttribute('idref')]; if(h) hrefs.push(decodeURIComponent(base + h));
+        });
+        var jobs = hrefs.map(function(h){
+          var f = zip.file(h); if(!f) return Promise.resolve(null);
+          return f.async('string').then(function(html){
+            var hd = new DOMParser().parseFromString(html, 'text/html');
+            hd.querySelectorAll('script,style,nav').forEach(function(n){ n.remove(); });
+            var hh = hd.querySelector('h1,h2,h3');
+            var txt = '';
+            hd.querySelectorAll('h1,h2,h3,h4,p,li,blockquote,div').forEach(function(n){
+              if(n.tagName === 'DIV' && n.querySelector('p,h1,h2,h3,li,div')) return;
+              var s = n.textContent.replace(/\s+/g,' ').trim();
+              if(s) txt += s + (/[.!?…:;"“”»]$/.test(s) ? '' : '.') + '\n';
+            });
+            if(!txt.trim()) txt = (hd.body ? hd.body.textContent : '').replace(/\s+/g,' ').trim();
+            return {title: hh ? hh.textContent.trim().slice(0,50) : '', text: txt};
+          });
+        });
+        return Promise.all(jobs).then(function(chs){
+          var list = chs.filter(Boolean);
+          list.forEach(function(c,i){ if(!c.title) c.title = 'Část ' + (i+1); });
+          openBook(title, list);
+        });
+      });
+    }).catch(function(e){
+      err('Tenhle EPUB se nepodařilo otevřít (může být chráněný DRM).');
+    });
+  }
+
+  $('file').onchange = function(){
+    var f = this.files[0]; if(!f) return;
+    err('Načítám…');
+    if(/\.epub$/i.test(f.name)) readEpub(f); else readTxt(f);
+  };
+  $('pasteBtn').onclick = function(){
+    var t = $('paste').value.trim();
+    if(!t){ err('Nejdřív sem vlož nějaký text.'); return; }
+    openBook('Vložený text', [{title:'Text', text:t}], {c:0,i:0});
+  };
+
+  /* ---------- přehrávání ---------- */
+  function setPlayUI(){ var b = $('play'); b.textContent = playing ? '⏸' : '▶'; b.setAttribute('aria-label', playing ? 'Pozastavit' : 'Přehrát'); }
+
+  var player = new Audio(), cache = {}, cacheKeys = [], curURL = null;
+  function xmlEsc(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;'); }
+  function sgn(n, d, u){ return (n >= 0 ? '+' : '') + n.toFixed(d) + u; }
+  function prosodyFor(ck){
+    var pi = pitchBase, vo = volBase, ra = rate;
+    if(opt.expr){
+      if(ck.k === 'e'){ vo = Math.min(1, vo + 0.15); ra *= 1.05; pi += 0.04; }
+      else if(ck.k === 'z'){ ra *= 0.92; }
+      else if(ck.k === 'i'){ pi += 0.1; ra *= 0.88; }
+      else if(ck.k === 'q'){ pi += 0.04; }
+    }
+    if(opt.gender && ck.w === 'd'){ pi += 0.06 * diffAmt; ra *= 1 + 0.03 * diffAmt; }
+    return {pi: pi, vo: vo, ra: ra};
+  }
+  function buildSSML(i){
+    var ck = chunks[i], pr = prosodyFor(ck);
+    var lead = '';
+    if(i > 0){ var ms = Math.round(clamp(pauseMs * (chunks[i-1].p || 1), 0, 5000)); if(ms > 30) lead = '<break time="' + ms + 'ms"/>'; }
+    return '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="cs-CZ"><voice name="' + pickVoice(ck) + '">' + lead +
+      '<prosody pitch="' + sgn((pr.pi - 1) * 4, 1, 'st') + '" rate="' + sgn((pr.ra - 1) * 100, 0, '%') + '" volume="' + sgn((pr.vo - 1) * 100, 0, '%') + '">' +
+      xmlEsc(applyDict(ck.t)) + '</prosody></voice></speak>';
+  }
+  function fetchAudio(i){
+    if(i < 0 || i >= chunks.length) return null;
+    var ssml = buildSSML(i), key = areg + '|' + ssml;
+    if(cache[key]) return cache[key];
+    var pr = fetch('https://' + areg + '.tts.speech.microsoft.com/cognitiveservices/v1', {
+      method: 'POST',
+      headers: {'Ocp-Apim-Subscription-Key': akey, 'Content-Type': 'application/ssml+xml', 'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3'},
+      body: ssml
+    }).then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); });
+    cache[key] = pr; cacheKeys.push(key);
+    if(cacheKeys.length > 40) delete cache[cacheKeys.shift()];
+    pr.catch(function(){ delete cache[key]; });
+    return pr;
+  }
+  function speak(){
+    if(!book) return;
+    player.pause();
+    if(idx >= chunks.length){ nextChapter(true); return; }
+    if(!akey){ playing = false; setPlayUI(); stopKeep(); err('Nejdřív vlož Azure klíč v nastavení.'); return; }
+    var token = ++speakToken;
+    err('');
+    var p = fetchAudio(idx);
+    for(var k = 1; k <= 3; k++){ var q = fetchAudio(idx + k); if(q) q.catch(function(){}); }
+    p.then(function(blob){
+      if(token !== speakToken || !playing) return;
+      if(curURL) URL.revokeObjectURL(curURL);
+      curURL = URL.createObjectURL(blob);
+      player.src = curURL;
+      player.onended = function(){
+        if(token !== speakToken || !playing) return;
+        idx++;
+        if(idx >= chunks.length){ nextChapter(true); return; }
+        render(); speak();
+      };
+      return player.play();
+    }).catch(function(e){
+      if(token !== speakToken) return;
+      playing = false; setPlayUI(); stopKeep();
+      var m = (e && e.message) ? e.message : String(e);
+      err('Azure: ' + m + '. Zkontroluj klíč, oblast a připojení.');
+    });
+  }
+
+  function play(){ if(!book) return; playing = true; setPlayUI(); try{ player.src = silenceURI(); player.play().catch(function(){}); }catch(e){} startKeep(); render(); speak(); }
+  function stop(){ playing = false; speakToken++; try{ player.pause(); }catch(e){} setPlayUI(); stopKeep(); }
+  function restartIfPlaying(){ if(playing) speak(); }
+
+  function nextChapter(autoplay){
+    if(!book) return;
+    if(ci+1 >= book.chapters.length){ stop(); return; }
+    gotoChapter(ci+1, 0);
+    if(autoplay || playing) speak();
+  }
+  function prevChapter(){
+    if(!book) return;
+    gotoChapter(Math.max(0, ci-1), 0); restartIfPlaying();
+  }
+  function jump(d){
+    if(!book) return;
+    idx = Math.max(0, Math.min(chunks.length-1, idx+d)); render(); restartIfPlaying();
+  }
+
+  $('play').onclick = function(){ playing ? stop() : play(); };
+  $('nextCh').onclick = function(){ nextChapter(false); };
+  $('prevCh').onclick = prevChapter;
+  $('back').onclick = function(){ jump(-1); };
+  $('fwd').onclick = function(){ jump(1); };
+  $('chSel').onchange = function(){ gotoChapter(parseInt(this.value,10), 0); restartIfPlaying(); };
+
+  idb(refreshLib);
+})();
+</script>
+</body>
+</html>
